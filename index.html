@@ -2,32 +2,39 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3-style UFバッファ スクランバー</title>
+    <title>3-style UFスクランバー</title>
     <style>
-        body { font-family: sans-serif; margin: 30px; background: #fafafa; color: #333; }
-        .control-panel { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .checkbox-group { margin-bottom: 15px; }
-        .checkbox-group label { font-size: 18px; margin-right: 15px; cursor: pointer; user-select: none; }
+        body { font-family: sans-serif; margin: 30px; background: #fafafa; color: #333; text-align: center; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .checkbox-group { background: #f0f0f0; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+        .checkbox-group label { font-size: 18px; cursor: pointer; user-select: none; }
         .checkbox-group input { transform: scale(1.3); margin-right: 5px; }
-        button { padding: 10px 20px; font-size: 16px; background: #0076d6; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #005fa3; }
-        .result-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-top: 15px; }
-        .procedure-card { background: #eef7ff; padding: 15px; border-radius: 6px; border-left: 5px solid #0076d6; }
-        .pair { font-weight: bold; font-size: 1.2em; color: #111; margin-bottom: 5px; }
-        .moves { font-family: monospace; font-size: 1.1em; color: #2c3e50; }
+        
+        /* 出題エリア */
+        .question-box { margin: 30px 0; min-height: 120px; }
+        .buffer-title { font-size: 1.1em; color: #666; margin-bottom: 5px; }
+        .target-pair { font-size: 4em; font-weight: bold; color: #0076d6; letter-spacing: 5px; }
+        
+        /* ボタン類 */
+        button { padding: 12px 24px; font-size: 18px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin: 5px; transition: 0.2s; }
+        .btn-next { background: #0076d6; color: white; width: 80%; max-width: 300px; }
+        .btn-next:hover { background: #005fa3; }
+        .btn-answer { background: #e0e0e0; color: #333; }
+        .btn-answer:hover { background: #ccc; }
+        
+        /* 解答エリア */
+        .answer-box { margin-top: 20px; min-height: 80px; padding: 15px; background: #eef7ff; border-radius: 6px; visibility: hidden; }
+        .moves { font-family: monospace; font-size: 1.6em; color: #2c3e50; margin-top: 5px; }
         .setup { color: #e67e22; }
-        .info-text { color: #666; font-style: italic; }
+        .info-text { color: red; font-weight: bold; }
     </style>
-    
     <script src="my_procedures.js"></script>
 </head>
 <body>
 
-    <h1>3-style 1文字目フィルター表示 (バッファ: UF)</h1>
+    <div class="container">
+        <h1>3-style UFスクランバー</h1>
 
-    <div class="control-panel">
-        <h3>表示したい「1文字目」をすべてチェックしてください：</h3>
         <div class="checkbox-group">
             <label><input type="checkbox" class="target-s1" value="あ" checked> あ</label>
             <label><input type="checkbox" class="target-s1" value="い" checked> い</label>
@@ -36,62 +43,91 @@
             <label><input type="checkbox" class="target-s1" value="く"> く</label>
             <label><input type="checkbox" class="target-s1" value="け"> け</label>
         </div>
-        <button onclick="filterProcedures()">該当する手順を表示</button>
-    </div>
 
-    <div class="result-box">
-        <h3>【該当する手順一覧】 (<span id="hit-count">0</span>件ヒット)</h3>
-        <div id="grid-output" class="grid-container">
-            </div>
+        <div class="question-box">
+            <div class="buffer-title">バッファ: UF</div>
+            <div id="display-pair" class="target-pair">??</div>
+        </div>
+
+        <div>
+            <button class="btn-next" onclick="nextQuestion()">次の問題 (スペースキー)</button>
+            <br>
+            <button class="btn-answer" onclick="toggleAnswer()">答えを表示 / 非表示 (Enterキー)</button>
+        </div>
+
+        <div id="answer-area" class="answer-box">
+            <strong>正解手順：</strong>
+            <div id="display-moves" class="moves"></div>
+        </div>
     </div>
 
     <script>
-        // ページを読み込んだ時に最初の表示を行う
-        window.onload = filterProcedures;
+        let currentPool = []; // 現在の出題候補
+        let currentTarget = null; // 現在出題中の手順オブジェクト
 
-        function filterProcedures() {
-            const outputContainer = document.getElementById("grid-output");
-            const countDisplay = document.getElementById("hit-count");
-            
-            // 1. チェックがついている文字（値）をすべて配列に集める
+        // 起動時に一問目を出題
+        window.onload = () => {
+            nextQuestion();
+        };
+
+        // キーボードショートカットの登録（練習をサクサク行うため）
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "Space") {
+                e.preventDefault(); // スペースキーでの画面スクロールを防止
+                nextQuestion();
+            } else if (e.code === "Enter") {
+                toggleAnswer();
+            }
+        });
+
+        // 次の問題を出す関数
+        function nextQuestion() {
+            // 答えを隠す
+            document.getElementById("answer-area").style.visibility = "hidden";
+
+            // データファイルの読み込みチェック
+            if (typeof myThreeStyles === 'undefined') {
+                document.getElementById("display-pair").innerHTML = '<span class="info-text">データ未検出</span>';
+                return;
+            }
+
+            // チェックされた文字を取得
             const checkedBoxes = document.querySelectorAll(".target-s1:checked");
             const activeLetters = Array.from(checkedBoxes).map(box => box.value);
 
-            // 画面をリセット
-            outputContainer.innerHTML = "";
-
-            // 万が一データファイルが読み込めていない場合の安全弁
-            if (typeof myThreeStyles === 'undefined') {
-                outputContainer.innerHTML = '<p class="info-text" style="color:red;">エラー: my_procedures.js が見つからないか、同じフォルダにありません。</p>';
-                return;
-            }
-
             if (activeLetters.length === 0) {
-                outputContainer.innerHTML = '<p class="info-text">1文字目を最低1つは選択してください。</p>';
-                countDisplay.textContent = "0";
+                document.getElementById("display-pair").innerHTML = '<span class="info-text" style="font-size:0.4em;">文字をどれか選んでください</span>';
                 return;
             }
 
-            // 2. 読み込んだmyThreeStylesから、1文字目が一致するものを絞り込む
-            const filteredData = myThreeStyles.filter(item => {
-                return activeLetters.includes(item.sticker1);
-            });
+            // 選ばれた文字を1文字目に持つ手順だけをプールする
+            currentPool = myThreeStyles.filter(item => activeLetters.includes(item.sticker1));
 
-            countDisplay.textContent = filteredData.length;
+            if (currentPool.length === 0) {
+                document.getElementById("display-pair").textContent = "無効";
+                return;
+            }
 
-            // 3. 画面にカードを生成
-            filteredData.forEach(target => {
-                const card = document.createElement("div");
-                card.className = "procedure-card";
+            // プールの中からランダムに1つ選択（ここがスクランバーの心臓）
+            const randomIndex = Math.floor(Math.random() * currentPool.length);
+            currentTarget = currentPool[randomIndex];
 
-                const setupText = target.setup ? `<span class="setup">[${target.setup}]</span> ` : "";
-                
-                card.innerHTML = `
-                    <div class="pair">【${target.sticker1}${target.sticker2}】</div>
-                    <div class="moves">${setupText}[${target.move1}, ${target.move2}]</div>
-                `;
-                outputContainer.appendChild(card);
-            });
+            // 画面の文字を書き換え
+            document.getElementById("display-pair").textContent = currentTarget.sticker1 + currentTarget.sticker2;
+
+            // 答えのテキストだけ裏で準備しておく
+            const setupText = currentTarget.setup ? `<span class="setup">[${currentTarget.setup}]</span> ` : "";
+            document.getElementById("display-moves").innerHTML = `${setupText}[${currentTarget.move1}, ${currentTarget.move2}]`;
+        }
+
+        // 答えの表示・非表示を切り替える関数
+        function toggleAnswer() {
+            const answerArea = document.getElementById("answer-area");
+            if (answerArea.style.visibility === "visible") {
+                answerArea.style.visibility = "hidden";
+            } else {
+                answerArea.style.visibility = "visible";
+            }
         }
     </script>
 </body>
