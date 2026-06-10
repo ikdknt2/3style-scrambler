@@ -2,203 +2,97 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3style スクランバー (アルゴリズム再現版)</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/cube.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/solve.js"></script>
+    <title>3-style UFバッファ スクランバー</title>
     <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 30px; background: #f8f9fa; color: #333; }
-        .container { max-width: 650px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin: 0 auto; }
-        h2 { margin-top: 0; color: #222; font-size: 1.6em; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; }
-        .list-box { border: 1px solid #ced4da; padding: 15px; max-height: 250px; overflow-y: auto; margin-bottom: 20px; border-radius: 6px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; background: #fff; }
-        .list-box label { display: flex; align-items: center; cursor: pointer; font-size: 0.95em; }
-        .list-box input { margin-right: 8px; }
-        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1.1em; font-weight: bold; transition: background 0.2s; }
-        button:hover { background: #0056b3; }
-        .result-box { margin-top: 25px; background: #f1f3f5; padding: 20px; border-radius: 8px; border-left: 5px solid #007bff; }
-        .scramble-title { color: #6c757d; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; }
-        .scramble-text { font-size: 1.5em; font-weight: bold; font-family: 'Courier New', Courier, monospace; color: #111; word-break: break-all; margin: 10px 0 0 0; line-height: 1.4; }
+        body { font-family: sans-serif; margin: 30px; background: #fafafa; color: #333; }
+        .control-panel { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .checkbox-group { margin-bottom: 15px; }
+        .checkbox-group label { font-size: 18px; margin-right: 15px; cursor: pointer; user-select: none; }
+        .checkbox-group input { transform: scale(1.3); margin-right: 5px; }
+        button { padding: 10px 20px; font-size: 16px; background: #0076d6; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #005fa3; }
+        .result-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-top: 15px; }
+        .procedure-card { background: #eef7ff; padding: 15px; border-radius: 6px; border-left: 5px solid #0076d6; }
+        .pair { font-weight: bold; font-size: 1.2em; color: #111; margin-bottom: 5px; }
+        .moves { font-family: monospace; font-size: 1.1em; color: #2c3e50; }
+        .setup { color: #e67e22; }
+        .info-text { color: #666; font-style: italic; }
     </style>
+    
+    <script src="my_procedures.js"></script>
 </head>
 <body>
 
-<div class="container">
-    <h2>3style Scrambler (軽量再現版)</h2>
-    <p style="font-size: 0.9em; color: #666;">出題したいレターペアにチェックを入れてください。パーツが重複しない組み合わせで複数サイクルが自動生成されます。</p>
-    
-    <div class="list-box" id="pairList"></div>
+    <h1>3-style 1文字目フィルター表示 (バッファ: UF)</h1>
 
-    <button onclick="generateScramble()">スクランブルを生成する</button>
+    <div class="control-panel">
+        <h3>表示したい「1文字目」をすべてチェックしてください：</h3>
+        <div class="checkbox-group">
+            <label><input type="checkbox" class="target-s1" value="あ" checked> あ</label>
+            <label><input type="checkbox" class="target-s1" value="い" checked> い</label>
+            <label><input type="checkbox" class="target-s1" value="え"> え</label>
+            <label><input type="checkbox" class="target-s1" value="き"> き</label>
+            <label><input type="checkbox" class="target-s1" value="く"> く</label>
+            <label><input type="checkbox" class="target-s1" value="け"> け</label>
+        </div>
+        <button onclick="filterProcedures()">該当する手順を表示</button>
+    </div>
 
     <div class="result-box">
-        <div class="scramble-title">Generated Scramble</div>
-        <p class="scramble-text" id="scrambleOutput">ーーー</p>
+        <h3>【該当する手順一覧】 (<span id="hit-count">0</span>件ヒット)</h3>
+        <div id="grid-output" class="grid-container">
+            </div>
     </div>
-</div>
 
-<script>
-// ==========================================
-// 1. あなたの3-style手順データ（自由に書き換えてください）
-// ==========================================
-// sticker1, sticker2 からパーツのペア（位置）を自動判別します。
-const myThreeStyles = [
-    { sticker1: "さ", sticker2: "み", setup: "D",  move1: "R U R'", move2: "D'" },
-    { sticker1: "あ", sticker2: "か", setup: "",   move1: "U",     move2: "R D R'" },
-    { sticker1: "た", sticker2: "に", setup: "R'", move1: "U'",    move2: "L D L'" },
-    { sticker1: "な", sticker2: "は", setup: "F",  move1: "R U R'", move2: "F'" },
-    { sticker1: "ま", sticker2: "や", setup: "B",  move1: "R U R'", move2: "B'" },
-    { sticker1: "ら", sticker2: "わ", setup: "D2", move1: "U",     move2: "D2" }
-];
+    <script>
+        // ページを読み込んだ時に最初の表示を行う
+        window.onload = filterProcedures;
 
-// ソルバーの初期化
-Cube.initSolver();
+        function filterProcedures() {
+            const outputContainer = document.getElementById("grid-output");
+            const countDisplay = document.getElementById("hit-count");
+            
+            // 1. チェックがついている文字（値）をすべて配列に集める
+            const checkedBoxes = document.querySelectorAll(".target-s1:checked");
+            const activeLetters = Array.from(checkedBoxes).map(box => box.value);
 
-// ==========================================
-// 2. 内部アルゴリズムロジック群（元のJSコードを完全移植）
-// ==========================================
-const utils = {
-    strMin: (a, b) => a < b ? a : b,
-    strMax: (a, b) => a > b ? a : b,
-    
-    // コミュテータ [A, B] を通常の回転記号に展開
-    expandMove: (setup, m1, m2) => {
-        const inv = (move) => move.split(' ').reverse().map(m => m.endsWith("'") ? m.slice(0, -1) : (m ? m + "'" : "")).join(' ');
-        const comm = `${m1} ${m2} ${inv(m1)} ${inv(m2)}`;
-        return setup ? `${setup} ${comm} ${inv(setup)}` : comm;
-    },
-    
-    // 回転記号列全体の逆手順（インバース）を作成
-    inverse: (moveStr) => {
-        return moveStr.split(/\s+/).reverse().map(m => {
-            if (!m) return "";
-            if (m.endsWith("'")) return m.slice(0, -1);
-            if (m.endsWith("2")) return m;
-            return m + "'";
-        }).join(' ').trim();
-    }
-};
+            // 画面をリセット
+            outputContainer.innerHTML = "";
 
-// 配列からランダムに1つ選ぶ
-const shufflePick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+            // 万が一データファイルが読み込めていない場合の安全弁
+            if (typeof myThreeStyles === 'undefined') {
+                outputContainer.innerHTML = '<p class="info-text" style="color:red;">エラー: my_procedures.js が見つからないか、同じフォルダにありません。</p>';
+                return;
+            }
 
-// ステッカーの文字からパーツの固有キーを作成（例: "みさ" -> "さみ" に統一）
-const getPartPair = (sticker1, sticker2) => {
-    const part1 = Array.from(sticker1).sort().join('');
-    const part2 = Array.from(sticker2).sort().join('');
-    return [utils.strMin(part1, part2), utils.strMax(part1, part2)];
-};
+            if (activeLetters.length === 0) {
+                outputContainer.innerHTML = '<p class="info-text">1文字目を最低1つは選択してください。</p>';
+                countDisplay.textContent = "0";
+                return;
+            }
 
-// 連想配列への分類 (classifyWithPartPairs)
-const classifyWithPartPairs = (threeStyles) => {
-    const ans = {};
-    for (let i = 0; i < threeStyles.length; i++) {
-        const threeStyle = threeStyles[i];
-        const [part1, part2] = getPartPair(threeStyle.sticker1, threeStyle.sticker2);
-        if (!(part1 in ans)) ans[part1] = {};
-        if (!(part2 in ans[part1])) ans[part1][part2] = [];
-        ans[part1][part2].push(threeStyle);
-    }
-    return ans;
-};
+            // 2. 読み込んだmyThreeStylesから、1文字目が一致するものを絞り込む
+            const filteredData = myThreeStyles.filter(item => {
+                return activeLetters.includes(item.sticker1);
+            });
 
-// パーツが重複しないように限界までランダムに選出 (pickThreeStyles)
-const pickThreeStyles = (threeStyleGroups) => {
-    if (Object.keys(threeStyleGroups).length === 0) return [];
+            countDisplay.textContent = filteredData.length;
 
-    // データのディープコピー
-    const threeStyleGroupsCopied = {};
-    const ks1 = Object.keys(threeStyleGroups);
-    for (let i = 0; i < ks1.length; i++) {
-        const p1 = ks1[i];
-        threeStyleGroupsCopied[p1] = Object.assign({}, threeStyleGroups[p1]);
-    }
+            // 3. 画面にカードを生成
+            filteredData.forEach(target => {
+                const card = document.createElement("div");
+                card.className = "procedure-card";
 
-    const ans = [];
-    const delim = '-';
-
-    const getFlattenedPairs = (groups) => {
-        return Object.keys(groups).flatMap(part1 => 
-            Object.keys(groups[part1]).map(part2 => `${part1}${delim}${part2}`)
-        );
-    };
-
-    let flattenedPairs = getFlattenedPairs(threeStyleGroupsCopied);
-
-    while (flattenedPairs.length > 0) {
-        const pickedPairStr = shufflePick(flattenedPairs);
-        const [part1, part2] = pickedPairStr.split(delim);
-        
-        const pickedThreeStyle = shufflePick(threeStyleGroupsCopied[part1][part2]);
-        ans.push(pickedThreeStyle);
-
-        // 使用したパーツに絡むすべてのペアを候補から全削除（重複防止）
-        delete threeStyleGroupsCopied[part1];
-        delete threeStyleGroupsCopied[part2];
-        
-        const ks = Object.keys(threeStyleGroupsCopied);
-        for (let i = 0; i < ks.length; i++) {
-            const tmpPart = ks[i];
-            delete threeStyleGroupsCopied[tmpPart][part1];
-            delete threeStyleGroupsCopied[tmpPart][part2];
+                const setupText = target.setup ? `<span class="setup">[${target.setup}]</span> ` : "";
+                
+                card.innerHTML = `
+                    <div class="pair">【${target.sticker1}${target.sticker2}】</div>
+                    <div class="moves">${setupText}[${target.move1}, ${target.move2}]</div>
+                `;
+                outputContainer.appendChild(card);
+            });
         }
-
-        flattenedPairs = getFlattenedPairs(threeStyleGroupsCopied);
-    }
-
-    return ans;
-};
-
-// 選ばれた手順を「逆順」にして「インバース」で結合
-const getThreeStyleScramble = (threeStyleGroups) => {
-    const pickedThreeStyles = pickThreeStyles(threeStyleGroups);
-    const pickedThreeStylesRev = [...pickedThreeStyles].reverse(); // 順番の反転
-
-    // 各手順をインバースにして結合
-    return pickedThreeStylesRev.map((ts) => 
-        utils.inverse(utils.expandMove(ts.setup, ts.move1, ts.move2))
-    ).join(' ');
-};
-
-// ==========================================
-// 3. 画面制御と実行処理
-// ==========================================
-// 初期化: 画面にチェックボックスを生成
-const pairListDiv = document.getElementById('pairList');
-myThreeStyles.forEach((ts, index) => {
-    const label = document.createElement('label');
-    label.innerHTML = `<input type="checkbox" value="${index}" checked> ${ts.sticker1}${ts.sticker2}`;
-    pairListDiv.appendChild(label);
-});
-
-// スクランブル生成ボタンが押された時の処理
-function generateScramble() {
-    const checkedIndexes = Array.from(document.querySelectorAll('#pairList input:checked')).map(el => parseInt(el.value));
-    if (checkedIndexes.length === 0) {
-        document.getElementById('scrambleOutput').innerText = "手順を1つ以上選択してください";
-        return;
-    }
-
-    // ① チェックされた手順だけでプールを構築
-    const selectedThreeStyles = checkedIndexes.map(idx => myThreeStyles[idx]);
-    const threeStyleGroups = classifyWithPartPairs(selectedThreeStyles);
-
-    // ② パーツ重複なしの逆手順の塊を作成（解答の作成）
-    const rawScramble = getThreeStyleScramble(threeStyleGroups);
-    if (!rawScramble) {
-        document.getElementById('scrambleOutput').innerText = "生成エラー";
-        return;
-    }
-
-    // ③ 【カモフラージュ処理】Cubejsに一度解かせて、その解法の逆手順を生成
-    const cube = new Cube();
-    cube.move(rawScramble.toLowerCase()); // 内部キューブを崩す
-    
-    const solution = cube.solve(); // 最短解法を検索
-    const cleanScramble = utils.inverse(solution).toUpperCase(); // 解法の逆＝綺麗なスクランブル
-
-    // ④ 結果を画面に出力（原型を留めない文字列になります）
-    document.getElementById('scrambleOutput').innerText = cleanScramble;
-}
-</script>
-
+    </script>
 </body>
 </html>
